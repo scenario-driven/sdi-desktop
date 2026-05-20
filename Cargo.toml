@@ -1,0 +1,41 @@
+[workspace]
+# Standalone crate. Empty workspace block isolates this Cargo project so it
+# does not get pulled into a parent workspace (e.g. when this repo sits as a
+# sibling of sdi-plugin under a wrapper directory).
+
+[package]
+name = "sdi-desktop"
+version = "0.0.0"
+edition = "2021"
+authors = ["SDI contributors"]
+repository = "https://github.com/sdi/sdi-desktop"
+homepage = "https://github.com/sdi/sdi-desktop"
+rust-version = "1.75"
+license = "MIT"
+description = "SDI desktop application (Tauri 2 shell around the bundled sdid daemon and sdi-web SPA)."
+
+[[bin]]
+name = "sdi-desktop"
+path = "src/main.rs"
+
+[lib]
+name = "sdi_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "process", "signal", "net", "sync", "time"] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

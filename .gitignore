@@ -1,0 +1,6 @@
+target/
+gen/schemas/
+*.db
+.DS_Store
+.env
+.env.local
