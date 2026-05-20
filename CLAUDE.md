@@ -1,6 +1,6 @@
 # CLAUDE.md — sdi-desktop
 
-Self-contained AI context for **this repository** (`@sdi/sdi-desktop`). Agents working in a fresh clone of this repo must operate from this document alone.
+Self-contained AI context for **this repository** (`@scenario-driven/sdi-desktop`). Agents working in a fresh clone of this repo must operate from this document alone.
 
 ## Identity (do not paraphrase, do not soften)
 
@@ -30,7 +30,7 @@ One-way dependency: `sdi-desktop → { sdid binary, sdi-web/dist }`. Nothing in 
 
 ### Frontend dist resolution
 
-`tauri.conf.json` reads `frontendDist = "../sdi-web/dist"`. The wrapper layout assumption: `sdi-web` sits as a sibling of `sdi-desktop` under the `sdi/` wrapper. If the user lays the two repos out elsewhere, override the path in their local `tauri.conf.json` — do not patch the canonical default.
+`tauri.conf.json` reads `frontendDist = "../sdi-web/dist"`. The wrapper layout assumption: `sdi-web` sits as a sibling of `sdi-desktop` under the `scenario-driven/` wrapper. If the user lays the two repos out elsewhere, override the path in their local `tauri.conf.json` — do not patch the canonical default.
 
 ## Standalone Cargo project
 

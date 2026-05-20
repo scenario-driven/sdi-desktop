@@ -5,7 +5,7 @@ SDI desktop application. Tauri 2 shell that bundles the `sdi-web` SPA, spawns `s
 ## Position in the SDI multi-repo layout
 
 ```
-sdi/                  # wrapper (not a git repo)
+scenario-driven/      # wrapper (not a git repo)
 ├── sdi-plugin/       # Claude Code plugin + Rust workspace (cli, daemon, mcp, core, db)
 ├── sdi-web/          # dashboard SPA — bundled by this shell
 └── sdi-desktop/      # this repo
