@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability for the main window — Tauri core only, no plugin permissions.",
+  "description": "Default capability for the main window — Tauri core + the D18 global shortcut. Tray menu and shortcut handling run in the Rust backend, so the only plugin permission needed in the WebView is the global-shortcut default (register / unregister).",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "global-shortcut:default"]
 }
