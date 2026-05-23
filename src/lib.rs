@@ -18,21 +18,30 @@
 //! (Cmd+Shift+L / Ctrl+Shift+L). All state is read through the daemon's
 //! HTTP API — no back-channel — so the indicator is exactly what the SPA
 //! and the CLI see.
+//!
+//! Pattern surface (v0.5 — D22 / D23 / D26). On top of the autonomy
+//! indicator the shell renders an **active CollaborationPattern badge** in
+//! the tray tooltip and the window title, with a red marker when any
+//! active pattern is `kind = 'direct'` (the anti-pattern marker per D23).
+//! Same transport story as autonomy: HTTP for the seed, SSE for deltas,
+//! no IPC back-channel.
 
 mod autonomy;
 mod daemon;
 mod daemon_url;
+mod patterns;
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
-use tauri::tray::TrayIconBuilder;
+use tauri::tray::{TrayIcon, TrayIconBuilder};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_global_shortcut::{
     Builder as GlobalShortcutBuilder, Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
 };
 
 use crate::autonomy::AutonomyMode;
+use crate::patterns::{PatternBadge, PatternMonitor};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(3);
 const PROJECT_POLL_BUDGET: Duration = Duration::from_secs(15);
@@ -57,6 +66,49 @@ struct AutonomyState {
 struct AutonomyTarget {
     port: u16,
     project_id: String,
+}
+
+/// Shared two-channel surface state. Both the autonomy poller and the
+/// pattern monitor publish into this; the [`render_surface`] helper
+/// composes the final tooltip / title string from whatever the latest
+/// snapshot is. Lives behind a single `Mutex` because writes are rare
+/// (every 3s for autonomy, on every SSE delta for patterns) and the
+/// `tauri::WebviewWindow::set_title` / `TrayIcon::set_tooltip` calls
+/// happen synchronously on the publisher's thread.
+struct SurfaceState {
+    autonomy: Mutex<AutonomyMode>,
+    pattern: Mutex<PatternBadge>,
+}
+
+impl SurfaceState {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            autonomy: Mutex::new(AutonomyMode::Unknown),
+            pattern: Mutex::new(PatternBadge::default()),
+        })
+    }
+
+    fn set_autonomy(&self, mode: AutonomyMode) {
+        *self.autonomy.lock().expect("autonomy surface lock poisoned") = mode;
+    }
+
+    fn set_pattern(&self, badge: PatternBadge) {
+        *self.pattern.lock().expect("pattern surface lock poisoned") = badge;
+    }
+
+    fn snapshot(&self) -> (AutonomyMode, PatternBadge) {
+        let m = *self.autonomy.lock().expect("autonomy surface lock poisoned");
+        let p = *self.pattern.lock().expect("pattern surface lock poisoned");
+        (m, p)
+    }
+}
+
+fn compose_title(mode: AutonomyMode, badge: PatternBadge) -> String {
+    format!("SDI · {}{}", mode.label(), badge.title_suffix())
+}
+
+fn compose_tooltip(mode: AutonomyMode, badge: PatternBadge) -> String {
+    format!("SDI — autonomy: {}{}", mode.label(), badge.tooltip_suffix())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -151,7 +203,7 @@ pub fn run() {
             if let Some(icon) = app.default_window_icon().cloned() {
                 tray_builder = tray_builder.icon(icon);
             }
-            let _tray = tray_builder.build(app)?;
+            let tray: TrayIcon = tray_builder.build(app)?;
 
             // 3. Register the D18 global shortcut now that the plugin is
             //    initialized. Failure is logged but never fatal — the user
@@ -167,10 +219,13 @@ pub fn run() {
             // 4. Wait for the daemon's port file, ping /health, then point the
             //    WebView at the daemon's HTTP origin so fetch / SSE land
             //    same-origin without an IPC relay. Once both succeed, start
-            //    the autonomy poller.
+            //    the autonomy poller AND the pattern monitor — both feed
+            //    the same SurfaceState so the tray tooltip / window title
+            //    show a coherent composed string.
             let window = app
                 .get_webview_window("main")
                 .expect("main webview window must exist");
+            let surface = SurfaceState::new();
             let poller_handle = app_handle.clone();
             tauri::async_runtime::spawn(async move {
                 let port = match daemon_url::wait_for_port().await {
@@ -204,7 +259,38 @@ pub fn run() {
                     Err(e) => eprintln!("sdi-desktop: bad daemon origin {origin}: {e}"),
                 }
 
-                run_autonomy_loop(poller_handle, port, window, mode_item).await;
+                // Pattern monitor (v0.5 tray badge). Runs concurrently
+                // with the autonomy poller — both write into the shared
+                // SurfaceState and the render helper composes the final
+                // tooltip / title from whichever snapshot is current.
+                let monitor = PatternMonitor::new();
+                monitor.bootstrap(port).await;
+                let initial = monitor.snapshot().await;
+                surface.set_pattern(initial);
+                render_surface(&window, &tray, &surface);
+
+                let pattern_window = window.clone();
+                let pattern_tray = tray.clone();
+                let pattern_surface = Arc::clone(&surface);
+                let pattern_monitor = monitor.clone();
+                tauri::async_runtime::spawn(async move {
+                    pattern_monitor
+                        .run_events_loop(port, move |badge| {
+                            pattern_surface.set_pattern(badge);
+                            render_surface(&pattern_window, &pattern_tray, &pattern_surface);
+                        })
+                        .await;
+                });
+
+                run_autonomy_loop(
+                    poller_handle,
+                    port,
+                    window,
+                    tray,
+                    mode_item,
+                    surface,
+                )
+                .await;
             });
 
             Ok(())
@@ -220,7 +306,9 @@ async fn run_autonomy_loop(
     app: AppHandle,
     port: u16,
     window: tauri::WebviewWindow,
+    tray: TrayIcon,
     mode_item: MenuItem<tauri::Wry>,
+    surface: Arc<SurfaceState>,
 ) {
     let project_id = match wait_for_project(port).await {
         Some(p) => p,
@@ -252,14 +340,28 @@ async fn run_autonomy_loop(
             continue;
         }
         last = Some(mode);
-        let title = format!("SDI · {}", mode.label());
-        if let Err(e) = window.set_title(&title) {
-            eprintln!("sdi-desktop: set_title({title}) failed: {e}");
-        }
+        surface.set_autonomy(mode);
         let menu_label = format!("Autonomy: {}", mode.label());
         if let Err(e) = mode_item.set_text(&menu_label) {
             eprintln!("sdi-desktop: tray set_text({menu_label}) failed: {e}");
         }
+        render_surface(&window, &tray, &surface);
+    }
+}
+
+/// Compose the autonomy + pattern surfaces into the window title and tray
+/// tooltip. Called whenever either monitor publishes a new snapshot —
+/// idempotent and cheap (a couple of string allocations + two Tauri
+/// setter calls).
+fn render_surface(window: &tauri::WebviewWindow, tray: &TrayIcon, surface: &SurfaceState) {
+    let (mode, badge) = surface.snapshot();
+    let title = compose_title(mode, badge);
+    if let Err(e) = window.set_title(&title) {
+        eprintln!("sdi-desktop: set_title({title}) failed: {e}");
+    }
+    let tooltip = compose_tooltip(mode, badge);
+    if let Err(e) = tray.set_tooltip(Some(&tooltip)) {
+        eprintln!("sdi-desktop: tray set_tooltip({tooltip}) failed: {e}");
     }
 }
 

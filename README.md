@@ -1,6 +1,18 @@
 # sdi-desktop
 
-SDI desktop application. Tauri 2 shell that bundles the `sdi-web` SPA, spawns `sdid` as a sidecar child process, and points the WebView at the daemon's HTTP origin.
+SDI desktop application. Tauri 2 shell that bundles the `sdi-web` SPA, spawns `sdid` as a sidecar child process, and points the WebView at the daemon's HTTP origin so `fetch` and SSE land same-origin without an IPC relay.
+
+## Autonomy surface (D14 / D17 / D18)
+
+The desktop shell mirrors the daemon's **resolved autonomy mode** into the OS-native chrome so the user can see L3 / L4 / L5 at a glance without opening the SPA:
+
+| Surface | Behavior |
+|---|---|
+| **Window title** | `SDI · L3 / L4 / L5 / —` updated every 3s from `/autonomy_policies/resolve`. |
+| **Tray icon menu** | Shows the resolved mode plus a **Circuit breaker (demote to L3)** menu item that hits `/autonomy_policies/circuit_breaker` (D18). |
+| **Global shortcut** | **Cmd+Shift+L** on macOS, **Ctrl+Shift+L** elsewhere — same circuit breaker, accessible regardless of which window has focus. |
+
+All three read state through the daemon's public HTTP API — no back-channel — so what the tray reports is exactly what the SPA and the CLI see.
 
 ## Position in the SDI multi-repo layout
 
