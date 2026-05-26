@@ -5,14 +5,14 @@
 
 [package]
 name = "sdi-desktop"
-version = "0.0.0"
+version = "0.1.0"
 edition = "2021"
 authors = ["SDI contributors"]
 repository = "https://github.com/scenario-driven/sdi-desktop"
 homepage = "https://github.com/scenario-driven/sdi-desktop"
 rust-version = "1.75"
 license = "MIT"
-description = "SDI desktop application (Tauri 2 shell around the bundled sdid daemon and sdi-web SPA)."
+description = "SDI desktop application (Tauri 2 shell bundling the SDI dashboard SPA and spawning the sdid daemon as a sidecar)."
 
 [[bin]]
 name = "sdi-desktop"

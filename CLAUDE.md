@@ -4,17 +4,17 @@ Self-contained AI context for **this repository** (`@scenario-driven/sdi-desktop
 
 ## Identity (do not paraphrase, do not soften)
 
-This repository is the **SDI Tauri 2 desktop shell**. It bundles the `sdi-web` SPA, spawns the `sdid` daemon as a sidecar child process, and navigates a Tauri WebView to the daemon's HTTP origin so the bundled SPA's `fetch('/...')` reaches it same-origin. It is NOT a thin wrapper that re-implements daemon logic — `sdid` is the body, this is the shell.
+This repository is the **SDI Tauri 2 desktop shell**. It bundles the SDI dashboard SPA (built from `sdi-plugin/plugin/web`), spawns the `sdid` daemon as a sidecar child process, and navigates a Tauri WebView to the daemon's HTTP origin so the bundled SPA's `fetch('/...')` reaches it same-origin. It is NOT a thin wrapper that re-implements daemon logic — `sdid` is the body, this is the shell.
 
 ## Repository position & contract
 
 ```
 sdi-plugin/   # five Rust crates (cli, daemon, mcp, core, db) + Claude Code plugin shell
-sdi-web/      # SPA (Vite/React 19) — bundled here as frontendDist
+              # plugin/web/ — dashboard SPA (Vite/React 19), bundled here as frontendDist
 sdi-desktop/  # this repo
 ```
 
-One-way dependency: `sdi-desktop → { sdid binary, sdi-web/dist }`. Nothing in `sdi-plugin` or `sdi-web` imports from this repo. See split decision artifact (Clawket: `SDI multi-repo 분리 — 인터페이스 계약 v1`).
+One-way dependency: `sdi-desktop → { sdid binary, sdi-plugin/plugin/web/dist }`. Nothing in `sdi-plugin` imports from this repo. See split decision artifact (Clawket: `SDI multi-repo 분리 — 인터페이스 계약 v1`).
 
 ### sdid resolution (do not change without notice)
 
@@ -30,7 +30,7 @@ One-way dependency: `sdi-desktop → { sdid binary, sdi-web/dist }`. Nothing in 
 
 ### Frontend dist resolution
 
-`tauri.conf.json` reads `frontendDist = "../sdi-web/dist"`. The wrapper layout assumption: `sdi-web` sits as a sibling of `sdi-desktop` under the `scenario-driven/` wrapper. If the user lays the two repos out elsewhere, override the path in their local `tauri.conf.json` — do not patch the canonical default.
+`tauri.conf.json` reads `frontendDist = "../sdi-plugin/plugin/web/dist"`. The wrapper layout assumption: `sdi-plugin` sits as a sibling of `sdi-desktop` under the `scenario-driven/` wrapper, so the SPA build output (`sdi-plugin/plugin/web/dist`) resolves at `../sdi-plugin/plugin/web/dist`. If the user lays the two repos out elsewhere, override the path in their local `tauri.conf.json` — do not patch the canonical default.
 
 ## Standalone Cargo project
 
@@ -40,12 +40,14 @@ It has **no source-level dependency on sdi-core / sdi-db / sdi-mcp**. The only d
 
 ## Verification before claiming complete
 
+All of these require `../sdi-plugin/plugin/web/dist` to exist first — `tauri-build` validates `frontendDist` even for `cargo check`. Build it once:
+
 ```sh
-cargo check                # offline structural check
+pnpm --dir ../sdi-plugin/plugin/web install
+pnpm --dir ../sdi-plugin/plugin/web build
+cargo check                # structural check
 cargo build                # full compile (needs system Tauri prerequisites)
 ```
-
-`cargo tauri build` additionally requires `../sdi-web/dist` to exist (run `pnpm build` in sibling sdi-web).
 
 ## Commit & release
 

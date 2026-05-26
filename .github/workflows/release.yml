@@ -1,0 +1,104 @@
+name: Release
+
+# Tag push (v*) builds the desktop bundles and publishes a draft GitHub
+# Release. workflow_dispatch runs the same matrix as a build-only dry run
+# (no release is created) so the build can be verified green before a
+# permanent tag is cut.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      plugin_ref:
+        description: 'sdi-plugin git ref to source the dashboard SPA from'
+        required: false
+        default: 'main'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: ${{ matrix.platform }} ${{ matrix.args }}
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: '--target aarch64-apple-darwin'
+          - platform: macos-latest
+            args: '--target x86_64-apple-darwin'
+          - platform: ubuntu-22.04
+            args: ''
+          - platform: windows-latest
+            args: ''
+    steps:
+      # Sibling layout under a "scenario-driven" parent so that this repo's
+      # tauri.conf.json `frontendDist = ../sdi-plugin/plugin/web/dist` and
+      # `beforeBuildCommand = pnpm --dir ../sdi-plugin/plugin/web build`
+      # resolve exactly as they do in local development.
+      - name: Checkout sdi-desktop
+        uses: actions/checkout@v4
+        with:
+          path: scenario-driven/sdi-desktop
+
+      - name: Checkout sdi-plugin (dashboard SPA source)
+        uses: actions/checkout@v4
+        with:
+          repository: scenario-driven/sdi-plugin
+          ref: ${{ github.event.inputs.plugin_ref || 'main' }}
+          path: scenario-driven/sdi-plugin
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: scenario-driven/sdi-plugin/plugin/web/pnpm-lock.yaml
+
+      - name: Install SPA dependencies
+        working-directory: scenario-driven/sdi-plugin/plugin/web
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: scenario-driven/sdi-desktop
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      # tauri-action runs tauri.conf.json's beforeBuildCommand (which builds
+      # the SPA into ../sdi-plugin/plugin/web/dist) and then compiles + bundles
+      # the desktop binary. When tagName is empty (workflow_dispatch) it only
+      # builds and uploads nothing.
+      - name: Build desktop bundles
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: scenario-driven/sdi-desktop
+          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          releaseName: 'SDI Desktop __VERSION__'
+          releaseBody: 'Desktop bundles built by CI. Binaries are unsigned — on macOS, right-click → Open (or clear the quarantine attribute) on first launch.'
+          releaseDraft: true
+          prerelease: true
+          args: ${{ matrix.args }}

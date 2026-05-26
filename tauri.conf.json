@@ -4,10 +4,10 @@
   "version": "0.1.0",
   "identifier": "org.sdi.desktop",
   "build": {
-    "frontendDist": "../sdi-web/dist",
+    "frontendDist": "../sdi-plugin/plugin/web/dist",
     "devUrl": "http://localhost:5175",
-    "beforeDevCommand": "pnpm --dir ../sdi-web dev",
-    "beforeBuildCommand": "pnpm --dir ../sdi-web build"
+    "beforeDevCommand": "pnpm --dir ../sdi-plugin/plugin/web dev",
+    "beforeBuildCommand": "pnpm --dir ../sdi-plugin/plugin/web build"
   },
   "app": {
     "windows": [

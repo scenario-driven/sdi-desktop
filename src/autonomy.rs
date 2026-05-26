@@ -2,7 +2,7 @@
 //! D18 circuit-breaker write. Lives in the desktop shell so the title-bar /
 //! tray surface stays in sync with the daemon's source of truth without
 //! introducing a back-channel — every state read goes through the daemon's
-//! public HTTP API, same as sdi-web.
+//! public HTTP API, same as the browser dashboard.
 
 use std::io;
 use std::time::Duration;

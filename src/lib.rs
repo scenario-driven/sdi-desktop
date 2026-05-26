@@ -1,4 +1,4 @@
-//! SDI desktop shell. Hosts the sdi-web SPA inside a Tauri window and spawns
+//! SDI desktop shell. Hosts the SDI dashboard SPA inside a Tauri window and spawns
 //! `sdid` as a child process if it's not already running, mirroring Clawket's
 //! desktop architecture so the user experience is the same: the window is
 //! the dashboard; the daemon is local; data lives in XDG.

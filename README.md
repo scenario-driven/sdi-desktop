@@ -1,8 +1,8 @@
 # sdi-desktop
 
-SDI desktop application. Tauri 2 shell that bundles the `sdi-web` SPA, spawns
-`sdid` as a sidecar child process, and points the WebView at the daemon's
-HTTP origin so `fetch` and SSE land same-origin without an IPC relay.
+SDI desktop application. Tauri 2 shell that bundles the SDI dashboard SPA,
+spawns `sdid` as a sidecar child process, and points the WebView at the
+daemon's HTTP origin so `fetch` and SSE land same-origin without an IPC relay.
 
 Canonical spec: [`sdi-plugin/docs/PRD.md`](https://github.com/scenario-driven/sdi-plugin/blob/main/docs/PRD.md).
 
@@ -33,7 +33,7 @@ see.
 ```
 scenario-driven/      # wrapper (not a git repo)
 ├── sdi-plugin/       # Claude Code plugin + Rust workspace (cli, daemon, mcp, core, db)
-├── sdi-web/          # dashboard SPA — bundled by this shell
+│                     # plugin/web/ — dashboard SPA, bundled by this shell
 ├── sdi-desktop/      # this repo
 └── sdi-docs/         # Astro/Starlight landing + bilingual guide site
 ```
@@ -41,21 +41,21 @@ scenario-driven/      # wrapper (not a git repo)
 One-way dependency:
 
 ```
-sdi-desktop → sdid binary       (resolved via SDI_DAEMON_BIN env, plugin layout, XDG, PATH — see src/daemon.rs)
-sdi-desktop → sdi-web/dist      (bundled at build time via tauri.conf.json `frontendDist`)
-sdi-plugin  ──nothing──         sdi-desktop / sdi-web (no reverse dependency)
+sdi-desktop → sdid binary                (resolved via SDI_DAEMON_BIN env, plugin layout, XDG, PATH — see src/daemon.rs)
+sdi-desktop → sdi-plugin/plugin/web/dist (bundled at build time via tauri.conf.json `frontendDist`)
+sdi-plugin  ──nothing──                  sdi-desktop (no reverse dependency)
 ```
 
 ## Build
 
 Prerequisites:
-1. `sdi-web` cloned as a sibling directory (`../sdi-web`) with `pnpm install` run.
+1. `sdi-plugin` cloned as a sibling directory (`../sdi-plugin`); run `pnpm install && pnpm build` in `plugin/web` so `plugin/web/dist` exists. `tauri-build` validates `frontendDist` even for `cargo check`, so the dist must be present before any compile.
 2. `sdid` binary available — either built from `sdi-plugin` (`cargo build -p sdi-daemon --release`) or installed under `~/.local/share/sdi/bin/`, or on `$PATH`.
 
 ```sh
-cargo check          # offline check (does not require sdi-web/dist or sdid)
-cargo tauri dev      # spawns sdi-web dev server (pnpm --dir ../sdi-web dev) + sdid sidecar
-cargo tauri build    # bundles ../sdi-web/dist into the desktop binary
+cargo check          # structural check (requires the SPA dist; sdid not needed)
+cargo tauri dev      # spawns the SPA dev server (pnpm --dir ../sdi-plugin/plugin/web dev) + sdid sidecar
+cargo tauri build    # bundles ../sdi-plugin/plugin/web/dist into the desktop binary
 ```
 
 Override the daemon binary at runtime:
