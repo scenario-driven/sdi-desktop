@@ -62,9 +62,17 @@ jobs:
           cache: pnpm
           cache-dependency-path: scenario-driven/sdi-plugin/plugin/web/pnpm-lock.yaml
 
-      - name: Install SPA dependencies
+      # Build the SPA from a controlled working directory so its `dist/` lands
+      # exactly where tauri.conf.json's frontendDist (resolved relative to the
+      # config dir) points: <workspace>/scenario-driven/sdi-plugin/plugin/web/dist.
+      # tauri.conf.json's beforeBuildCommand uses a relative `../sdi-plugin`
+      # that only holds in the local wrapper layout — it's overridden to null
+      # for the CI build below, so this step is the SPA's only build here.
+      - name: Build dashboard SPA
         working-directory: scenario-driven/sdi-plugin/plugin/web
-        run: pnpm install --frozen-lockfile
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -86,10 +94,12 @@ jobs:
             librsvg2-dev \
             patchelf
 
-      # tauri-action runs tauri.conf.json's beforeBuildCommand (which builds
-      # the SPA into ../sdi-plugin/plugin/web/dist) and then compiles + bundles
-      # the desktop binary. When tagName is empty (workflow_dispatch) it only
-      # builds and uploads nothing.
+      # Compiles + bundles the desktop binary. The SPA is already built (step
+      # above), so beforeBuildCommand is overridden to null via --config —
+      # tauri.conf.json keeps it for local dev, but its relative `../sdi-plugin`
+      # path does not resolve under CI's checkout layout. frontendDist still
+      # resolves relative to the config dir and finds the dist built above.
+      # When tagName is empty (workflow_dispatch) it only builds, uploads nothing.
       - name: Build desktop bundles
         uses: tauri-apps/tauri-action@v0
         env:
@@ -101,4 +111,4 @@ jobs:
           releaseBody: 'Desktop bundles built by CI. Binaries are unsigned — on macOS, right-click → Open (or clear the quarantine attribute) on first launch.'
           releaseDraft: true
           prerelease: true
-          args: ${{ matrix.args }}
+          args: "${{ matrix.args }} --config '{\"build\":{\"beforeBuildCommand\":\"\"}}'"
