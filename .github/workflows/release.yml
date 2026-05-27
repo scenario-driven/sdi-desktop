@@ -109,6 +109,6 @@ jobs:
           tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
           releaseName: 'SDI Desktop __VERSION__'
           releaseBody: 'Desktop bundles built by CI. Binaries are unsigned — on macOS, right-click → Open (or clear the quarantine attribute) on first launch.'
-          releaseDraft: true
+          releaseDraft: false
           prerelease: true
           args: "${{ matrix.args }} --config '{\"build\":{\"beforeBuildCommand\":\"\"}}'"
