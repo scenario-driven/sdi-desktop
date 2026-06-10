@@ -291,7 +291,19 @@ impl PatternMonitor {
             }
             let trimmed = line.trim_end_matches(['\r', '\n']);
             if trimmed.is_empty() {
-                if let Some(kind) = cur_event.take() {
+                // The daemon sends UNNAMED SSE events (default `message`
+                // type) with the kind inside the JSON envelope — naming
+                // them would starve the dashboard's `onmessage` consumer.
+                // Older daemons named events via `event: <kind>`; accept
+                // both, preferring the explicit line when present.
+                let kind = cur_event.take().or_else(|| {
+                    serde_json::from_str::<serde_json::Value>(&cur_data)
+                        .ok()
+                        .and_then(|v| {
+                            v.get("kind").and_then(|k| k.as_str()).map(String::from)
+                        })
+                });
+                if let Some(kind) = kind {
                     self.apply_event(&kind, &cur_data).await;
                     let now = self.snapshot().await;
                     if now != last_emitted {
