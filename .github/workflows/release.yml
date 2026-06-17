@@ -94,6 +94,26 @@ jobs:
             librsvg2-dev \
             patchelf
 
+      # Stage the sdid daemon as the Tauri externalBin sidecar. tauri.conf.json
+      # declares `bundle.externalBin: ["bin/sdid"]`, so the bundler needs a
+      # per-target `bin/sdid-<triple>` to copy next to the app binary (where
+      # src/daemon.rs resolves it as `<exe_dir>/sdid`). Built from the sibling
+      # sdi-plugin checkout so the shipped daemon matches this build.
+      - name: Stage sdid sidecar (externalBin)
+        shell: bash
+        working-directory: scenario-driven/sdi-plugin
+        run: |
+          set -euo pipefail
+          TRIPLE="$(echo '${{ matrix.args }}' | sed -n 's/.*--target \([^ ]*\).*/\1/p')"
+          [ -z "$TRIPLE" ] && TRIPLE="$(rustc -vV | sed -n 's/host: //p')"
+          rustup target add "$TRIPLE" || true
+          cargo build -p sdi-daemon --release --target "$TRIPLE"
+          EXT=""; case "$TRIPLE" in *windows*) EXT=".exe";; esac
+          DEST="../sdi-desktop/bin"
+          mkdir -p "$DEST"
+          cp "target/$TRIPLE/release/sdid$EXT" "$DEST/sdid-$TRIPLE$EXT"
+          echo "staged $DEST/sdid-$TRIPLE$EXT"
+
       # Compiles + bundles the desktop binary. The SPA is already built (step
       # above), so beforeBuildCommand is overridden to null via --config —
       # tauri.conf.json keeps it for local dev, but its relative `../sdi-plugin`
@@ -104,11 +124,28 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS Developer ID signing + notarization. These secrets are only
+          # consumed on the macos-latest runners; on Linux/Windows tauri-action
+          # ignores them. Set them once in the repo (Settings → Secrets):
+          #   APPLE_CERTIFICATE            base64 of the Developer ID Application .p12
+          #   APPLE_CERTIFICATE_PASSWORD   the .p12 export password
+          #   APPLE_SIGNING_IDENTITY       e.g. "Developer ID Application: NAME (TEAMID)"
+          #   APPLE_ID / APPLE_PASSWORD    Apple ID + an app-specific password (notarytool)
+          #   APPLE_TEAM_ID                the 10-char Team ID
+          # The same Developer ID Application cert used for other apps is reused;
+          # SDI does not need its own certificate — only its own bundle id
+          # (org.sdi.desktop) and these account-level credentials.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           projectPath: scenario-driven/sdi-desktop
           tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
           releaseName: 'SDI Desktop __VERSION__'
-          releaseBody: 'Desktop bundles built by CI. Binaries are unsigned — on macOS, right-click → Open (or clear the quarantine attribute) on first launch.'
+          releaseBody: 'macOS bundles are Developer ID signed + notarized (open normally). Linux/Windows bundles are unsigned.'
           releaseDraft: false
           prerelease: true
           args: "${{ matrix.args }} --config '{\"build\":{\"beforeBuildCommand\":\"\"}}'"
