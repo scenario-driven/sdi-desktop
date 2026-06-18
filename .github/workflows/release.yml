@@ -149,3 +149,26 @@ jobs:
           releaseDraft: false
           prerelease: true
           args: "${{ matrix.args }} --config '{\"build\":{\"beforeBuildCommand\":\"\"}}'"
+
+      # The Tauri bundler notarizes + staples the .app, but the .dmg wrapper is
+      # produced afterwards and carries no stapled ticket of its own — so an
+      # offline first-open of the downloaded .dmg can still warn. Notarize +
+      # staple the .dmg too, then replace the release asset so the download is
+      # clean even offline.
+      - name: Notarize + staple DMG
+        if: matrix.platform == 'macos-latest' && startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          DMG="$(find scenario-driven/sdi-desktop/target -path '*/release/bundle/dmg/*.dmg' | head -1)"
+          [ -z "$DMG" ] && { echo 'no dmg produced'; exit 1; }
+          echo "notarizing $DMG"
+          xcrun notarytool submit "$DMG" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          gh release upload "${{ github.ref_name }}" "$DMG" --clobber --repo "${{ github.repository }}"
