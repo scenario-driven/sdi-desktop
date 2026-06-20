@@ -97,22 +97,40 @@ jobs:
       # Stage the sdid daemon as the Tauri externalBin sidecar. tauri.conf.json
       # declares `bundle.externalBin: ["bin/sdid"]`, so the bundler needs a
       # per-target `bin/sdid-<triple>` to copy next to the app binary (where
-      # src/daemon.rs resolves it as `<exe_dir>/sdid`). Built from the sibling
-      # sdi-plugin checkout so the shipped daemon matches this build.
+      # src/daemon.rs resolves it as `<exe_dir>/sdid`).
+      #
+      # Prefer the exact prebuilt sdid from sdi-plugin's latest GitHub Release so
+      # the bundled daemon is a known, released version (not unreleased main HEAD).
+      # sdi-plugin publishes `sdi-<tag>-<triple>.tar.gz` containing `sdi` + `sdid`
+      # for darwin/linux; for targets it does not publish (Windows) we fall back
+      # to compiling from the sibling checkout.
       - name: Stage sdid sidecar (externalBin)
         shell: bash
         working-directory: scenario-driven/sdi-plugin
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           TRIPLE="$(echo '${{ matrix.args }}' | sed -n 's/.*--target \([^ ]*\).*/\1/p')"
           [ -z "$TRIPLE" ] && TRIPLE="$(rustc -vV | sed -n 's/host: //p')"
-          rustup target add "$TRIPLE" || true
-          cargo build -p sdi-daemon --release --target "$TRIPLE"
           EXT=""; case "$TRIPLE" in *windows*) EXT=".exe";; esac
           DEST="../sdi-desktop/bin"
           mkdir -p "$DEST"
-          cp "target/$TRIPLE/release/sdid$EXT" "$DEST/sdid-$TRIPLE$EXT"
-          echo "staged $DEST/sdid-$TRIPLE$EXT"
+          dl="$(mktemp -d)"
+          if gh release download --repo scenario-driven/sdi-plugin \
+               --pattern "sdi-*-${TRIPLE}.tar.gz" --dir "$dl" 2>/dev/null; then
+            tb="$(ls "$dl"/sdi-*-"${TRIPLE}".tar.gz)"
+            tar -xzf "$tb" -C "$dl"
+            src="$(find "$dl" -name "sdid${EXT}" -type f | head -1)"
+            cp "$src" "$DEST/sdid-${TRIPLE}${EXT}"
+            echo "bundled prebuilt sdid from $(basename "$tb")"
+          else
+            echo "no prebuilt sdid published for ${TRIPLE} — compiling from source"
+            rustup target add "$TRIPLE" || true
+            cargo build -p sdi-daemon --release --target "$TRIPLE"
+            cp "target/${TRIPLE}/release/sdid${EXT}" "$DEST/sdid-${TRIPLE}${EXT}"
+          fi
+          echo "staged $DEST/sdid-${TRIPLE}${EXT}"
 
       # Compiles + bundles the desktop binary. The SPA is already built (step
       # above), so beforeBuildCommand is overridden to null via --config —
